@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 from fastapi import APIRouter, UploadFile
 from fastapi.exceptions import HTTPException
@@ -15,25 +16,24 @@ router = APIRouter(
 )
 
 
-# Create multiple temporary upload files
-async def multiple_temp_files(files: list[UploadFile]) -> list[str]:
-    return await asyncio.gather(*[create_temporary_upload_file(file) for file in files])
-
-
 # Route for model predictions on single input
 @router.post("/single")
 async def predict_single(img: UploadFile) -> None:
     # Step 1: Create Named Temporary File
     try:
         img_filename = await create_temporary_upload_file(img)
-    except Exception as e:
-        print(e)
-        await img.close()
+    except Exception:
+        os.unlink(img_filename)
         raise HTTPException(500)
     else:
         # Step 2: Get Model Predictions
         model = ResNetImgModel()
         out = model.predict(img_filename)
+
+        # Step 3: Unlink all temp files
+        os.unlink(img_filename)
+
+        # Step 4: Return class/preds as json response
         return JSONResponse(
             {
                 "Model Prediction": [
@@ -47,12 +47,20 @@ async def predict_single(img: UploadFile) -> None:
 @router.post("/multiple")
 async def predict_multiple(imgs: list[UploadFile]) -> None:
     try:
-        img_filenames = await multiple_temp_files(imgs)
-        print(img_filenames)  # debug
+        img_filenames = await asyncio.gather(
+            *[create_temporary_upload_file(img) for img in imgs]
+        )
     except Exception:
         # Close all files
-        raise HTTPException(500)
+        [os.unlink(img_filename) for img_filename in img_filenames]
+        raise HTTPException(500, f"Errors in Processing Upload Files!")
     else:
+        # Get model preds
         model = ResNetImgModel()
         out = [model.predict(img_filename) for img_filename in img_filenames]
+
+        # Purge all temp upload files
+        [os.unlink(img_filename) for img_filename in img_filenames]
+
+        # Return response
         return JSONResponse({"Model Prediction": out})

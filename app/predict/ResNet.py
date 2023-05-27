@@ -30,6 +30,8 @@ class ResNetImgModel(ImageClassifierModel):
 
         # Step 2: Get model outputs
         out = ResNetImgModel.model(img_tensor.unsqueeze(0))
+
+        # Step 3: Output post-processing
         out = torch.argmax(out, 1).item()
         out = ResNetImgModel.idx2label[out]
         return out
